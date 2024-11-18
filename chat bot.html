@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interfaz de Chat con API</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --sidebar-bg: #f0f0f0;
+            --chat-bg: #ffffff;
+            --border-color: #e5e5e5;
+            --button-bg: #e0e0e0;
+            --button-text: #000000;
+            --user-message-bg: #f0f0f0;
+            --assistant-message-bg: #ffffff;
+        }
+
+        .dark-mode {
+            --bg-color: #343541;
+            --text-color: #ffffff;
+            --sidebar-bg: #202123;
+            --chat-bg: #343541;
+            --border-color: #4d4d4f;
+            --button-bg: #40414f;
+            --button-text: #ffffff;
+            --user-message-bg: #444654;
+            --assistant-message-bg: #343541;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 260px;
+            background-color: var(--sidebar-bg);
+            padding: 20px;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--chat-bg);
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .message {
+            max-width: 80%;
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            border-radius: 5px;
+            line-height: 1.4;
+        }
+
+        .user-message {
+            background-color: var(--user-message-bg);
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .assistant-message {
+            background-color: var(--assistant-message-bg);
+            align-self: flex-start;
+            margin-right: auto;
+        }
+
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            resize: none;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: var(--button-bg);
+            color: var(--button-text);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            opacity: 0.8;
+        }
+
+        .toggle-mode {
+            margin-bottom: 20px;
+        }
+
+        .clear-conversation {
+            margin-top: auto;
+        }
+
+        .mobile-menu-button {
+            display: none;
+            padding: 10px;
+            background-color: var(--button-bg);
+            color: var(--button-text);
+            border: none;
+            cursor: pointer;
+        }
+
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+                display: none;
+            }
+
+            .sidebar.show {
+                display: flex;
+            }
+
+            .mobile-menu-button {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="mobile-menu-button" onclick="toggleSidebar()">☰ Menú</button>
+    <div class="main-container">
+        <div class="sidebar" id="sidebar">
+            <button class="toggle-mode" onclick="toggleDarkMode()">Cambiar Modo Claro/Oscuro</button>
+            <button class="clear-conversation" onclick="clearConversation()">Borrar Conversación</button>
+        </div>
+        <div class="chat-container">
+            <div class="chat-messages" id="chat-messages"></div>
+            <div class="input-area">
+                <textarea id="user-input" rows="3" placeholder="Escribe tu mensaje aquí..."></textarea>
+                <button onclick="sendMessage()">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let conversationHistory = "This is a conversation between User and Llama, a friendly chatbot. Llama is helpful, kind, honest, good at writing, and never fails to answer any requests immediately and with precision.\n\n";
+
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+        }
+
+        function clearConversation() {
+            document.getElementById('chat-messages').innerHTML = '';
+            conversationHistory = "This is a conversation between User and Llama, a friendly chatbot. Llama is helpful, kind, honest, good at writing, and never fails to answer any requests immediately and with precision.\n\n";
+            addMessageToChat('assistant', '¡Hola! ¿Cómo puedo ayudarte?');
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('show');
+        }
+
+        async function sendMessage() {
+            const textarea = document.getElementById('user-input');
+            const message = textarea.value.trim();
+            if (message) {
+                addMessageToChat('user', message);
+                textarea.value = '';
+                
+                conversationHistory += `User: ${message}\nLlama:`;
+
+                try {
+                    const response = await fetch('http://localhost:8090/completion', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            stream: true,
+                            n_predict: 400,
+                            temperature: 0.7,
+                            stop: ["</s>", "Llama:", "User:"],
+                            repeat_last_n: 256,
+                            repeat_penalty: 1.18,
+                            penalize_nl: false,
+                            top_k: 40,
+                            top_p: 0.95,
+                            min_p: 0.05,
+                            tfs_z: 1,
+                            typical_p: 1,
+                            presence_penalty: 0,
+                            frequency_penalty: 0,
+                            mirostat: 0,
+                            mirostat_tau: 5,
+                            mirostat_eta: 0.1,
+                            grammar: "",
+                            n_probs: 0,
+                            min_keep: 0,
+                            image_data: [],
+                            cache_prompt: true,
+                            api_key: "",
+                            slot_id: -1,
+                            prompt: conversationHistory
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    await handleStreamResponse(response);
+
+                } catch (error) {
+                    console.error('Error:', error);
+                    addMessageToChat('assistant', 'Lo siento, ha ocurrido un error al procesar tu mensaje.');
+                }
+            }
+        }
+
+        async function handleStreamResponse(response) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let assistantResponse = '';
+            let buffer = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.trim().startsWith('data:')) {
+                        try {
+                            const jsonData = JSON.parse(line.slice(5));
+                            if (jsonData.content) {
+                                assistantResponse += jsonData.content;
+                                updateAssistantMessage(assistantResponse);
+                            }
+                        } catch (e) {
+                            console.error('Error parsing JSON:', e, line);
+                        }
+                    }
+                }
+            }
+
+            if (buffer) {
+                try {
+                    const jsonData = JSON.parse(buffer.slice(5));
+                    if (jsonData.content) {
+                        assistantResponse += jsonData.content;
+                        updateAssistantMessage(assistantResponse);
+                    }
+                } catch (e) {
+                    console.error('Error parsing JSON:', e, buffer);
+                }
+            }
+
+            conversationHistory += `${assistantResponse}\n`;
+        }
+
+        function addMessageToChat(role, content) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${role}-message`;
+            messageElement.textContent = content;
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function updateAssistantMessage(content) {
+            const chatMessages = document.getElementById('chat-messages');
+            let assistantMessage = chatMessages.querySelector('.assistant-message:last-child');
+            if (!assistantMessage) {
+                assistantMessage = document.createElement('div');
+                assistantMessage.className = 'message assistant-message';
+                chatMessages.appendChild(assistantMessage);
+            }
+            assistantMessage.textContent = content;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        document.getElementById('user-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Inicializar la conversación con un mensaje de bienvenida
+        window.onload = function() {
+            addMessageToChat('assistant', '¡Hola! ¿Cómo puedo ayudarte?');
+        };
+    </script>
+</body>
+</html>
